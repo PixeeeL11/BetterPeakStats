@@ -10,8 +10,11 @@
     <Reference Include="BepInEx">
       <HintPath>..\lib\BepInEx.dll</HintPath>
     </Reference>
-    <Reference Include="HarmonyX">
+    <Reference Include="HarmonyX" Condition="Exists('..\lib\HarmonyX.dll')">
       <HintPath>..\lib\HarmonyX.dll</HintPath>
+    </Reference>
+    <Reference Include="HarmonyXInterop" Condition="Exists('..\lib\HarmonyXInterop.dll')">
+      <HintPath>..\lib\HarmonyXInterop.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine">
       <HintPath>..\lib\UnityEngine.dll</HintPath>
