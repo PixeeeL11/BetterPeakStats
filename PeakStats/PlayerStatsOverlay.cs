@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -174,12 +176,12 @@ public static class PlayerLocator
 {
     public static PlayerSnapshot? TryGetLocalPlayer()
     {
-        return FakeGameApi.TryGetLocalPlayer();
+        return ReflectionGameApi.TryGetLocalPlayer();
     }
 
     public static List<PlayerSnapshot> GetNearbyPlayers(PlayerSnapshot localPlayer, float maxDistance)
     {
-        return FakeGameApi.GetPlayersAround(localPlayer, maxDistance);
+        return ReflectionGameApi.GetPlayersAround(localPlayer, maxDistance);
     }
 }
 
@@ -193,15 +195,166 @@ public sealed class PlayerSnapshot
     public Vector3 WorldPosition { get; init; }
 }
 
-internal static class FakeGameApi
+internal static class ReflectionGameApi
 {
+    private static readonly Lazy<ReflectionCache> Cache = new(() => new ReflectionCache());
+
     public static PlayerSnapshot? TryGetLocalPlayer()
     {
-        return null;
+        return Cache.Value.TryGetLocalPlayer();
     }
 
     public static List<PlayerSnapshot> GetPlayersAround(PlayerSnapshot localPlayer, float maxDistance)
     {
-        return new List<PlayerSnapshot>();
+        return Cache.Value.GetPlayersAround(localPlayer, maxDistance);
+    }
+}
+
+internal sealed class ReflectionCache
+{
+    private readonly Type? _characterType;
+    private readonly PropertyInfo? _localCharacterProperty;
+    private readonly PropertyInfo? _allCharactersProperty;
+    private readonly PropertyInfo? _centerProperty;
+    private readonly PropertyInfo? _characterNameProperty;
+    private readonly PropertyInfo? _isLocalProperty;
+    private readonly PropertyInfo? _refsProperty;
+    private readonly PropertyInfo? _statsProperty;
+    private readonly PropertyInfo? _heightProperty;
+    private readonly PropertyInfo? _healthProperty;
+    private readonly PropertyInfo? _dataProperty;
+    private readonly PropertyInfo? _currentStaminaProperty;
+    private readonly PropertyInfo? _pingProperty;
+
+    public ReflectionCache()
+    {
+        _characterType = Type.GetType("Character, Assembly-CSharp");
+        if (_characterType == null)
+        {
+            return;
+        }
+
+        _localCharacterProperty = _characterType.GetProperty("localCharacter", BindingFlags.Public | BindingFlags.Static);
+        _allCharactersProperty = _characterType.GetProperty("AllCharacters", BindingFlags.Public | BindingFlags.Static);
+        _centerProperty = _characterType.GetProperty("Center", BindingFlags.Public | BindingFlags.Instance);
+        _characterNameProperty = _characterType.GetProperty("characterName", BindingFlags.Public | BindingFlags.Instance);
+        _isLocalProperty = _characterType.GetProperty("IsLocal", BindingFlags.Public | BindingFlags.Instance);
+        _refsProperty = _characterType.GetProperty("refs", BindingFlags.Public | BindingFlags.Instance);
+        _dataProperty = _characterType.GetProperty("data", BindingFlags.Public | BindingFlags.Instance);
+        _pingProperty = _characterType.GetProperty("Ping", BindingFlags.Public | BindingFlags.Instance);
+
+        if (_refsProperty?.PropertyType != null)
+        {
+            _statsProperty = _refsProperty.PropertyType.GetProperty("stats", BindingFlags.Public | BindingFlags.Instance);
+            _healthProperty = _refsProperty.PropertyType.GetProperty("health", BindingFlags.Public | BindingFlags.Instance);
+        }
+
+        if (_dataProperty?.PropertyType != null)
+        {
+            _currentStaminaProperty = _dataProperty.PropertyType.GetProperty("currentStamina", BindingFlags.Public | BindingFlags.Instance);
+        }
+
+        if (_statsProperty?.PropertyType != null)
+        {
+            _heightProperty = _statsProperty.PropertyType.GetProperty("heightInMeters", BindingFlags.Public | BindingFlags.Instance);
+        }
+    }
+
+    public PlayerSnapshot? TryGetLocalPlayer()
+    {
+        var localCharacter = _localCharacterProperty?.GetValue(null, null);
+        if (localCharacter == null)
+        {
+            return null;
+        }
+
+        return BuildSnapshot(localCharacter);
+    }
+
+    public List<PlayerSnapshot> GetPlayersAround(PlayerSnapshot localPlayer, float maxDistance)
+    {
+        var result = new List<PlayerSnapshot>();
+        var allCharacters = _allCharactersProperty?.GetValue(null, null);
+        if (allCharacters is not IEnumerable enumerable)
+        {
+            return result;
+        }
+
+        foreach (var character in enumerable)
+        {
+            if (character == null)
+            {
+                continue;
+            }
+
+            if (_isLocalProperty?.GetValue(character, null) is bool isLocal && isLocal)
+            {
+                continue;
+            }
+
+            var snapshot = BuildSnapshot(character);
+            if (snapshot == null)
+            {
+                continue;
+            }
+
+            if (Vector3.Distance(localPlayer.WorldPosition, snapshot.WorldPosition) <= maxDistance)
+            {
+                result.Add(snapshot);
+            }
+        }
+
+        return result;
+    }
+
+    private PlayerSnapshot? BuildSnapshot(object character)
+    {
+        if (_centerProperty?.GetValue(character, null) is not Vector3 center)
+        {
+            var transform = (character as Component)?.transform;
+            if (transform == null)
+            {
+                return null;
+            }
+
+            center = transform.position;
+        }
+
+        var displayName = _characterNameProperty?.GetValue(character, null) as string ?? ((character as Component)?.name ?? "Unknown");
+        var stamina = GetFloat(_currentStaminaProperty?.GetValue(_dataProperty?.GetValue(character, null), null));
+        var health = GetFloat(_healthProperty?.GetValue(_refsProperty?.GetValue(character, null), null));
+        var ping = GetInt(_pingProperty?.GetValue(character, null));
+
+        return new PlayerSnapshot
+        {
+            PlayerId = character.GetHashCode(),
+            DisplayName = displayName,
+            Health = health,
+            Stamina = stamina,
+            Ping = ping,
+            WorldPosition = center
+        };
+    }
+
+    private static float GetFloat(object? value)
+    {
+        return value switch
+        {
+            float f => f,
+            double d => (float)d,
+            int i => i,
+            _ => 0f
+        };
+    }
+
+    private static int GetInt(object? value)
+    {
+        return value switch
+        {
+            int i => i,
+            short s => s,
+            byte b => b,
+            _ => 0
+        };
     }
 }

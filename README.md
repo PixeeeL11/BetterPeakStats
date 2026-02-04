@@ -20,24 +20,18 @@
 
 ## Куда подключить реальные данные
 
-Файл `PlayerStatsOverlay.cs` содержит секцию `FakeGameApi`. Сейчас она возвращает `null` и пустой список — это заглушки. Ваша задача — заменить эти методы на обращения к реальному API игры:
+В `PlayerStatsOverlay.cs` теперь используется `ReflectionGameApi`. Он пытается достать данные из `Assembly-CSharp` через рефлексию:
 
-```csharp
-internal static class FakeGameApi
-{
-    public static PlayerSnapshot? TryGetLocalPlayer()
-    {
-        // TODO: вернуть локального игрока
-    }
+- `Character.localCharacter`
+- `Character.AllCharacters`
+- `Character.Center`
+- `Character.characterName`
+- `Character.data.currentStamina`
+- `Character.refs.health`
 
-    public static List<PlayerSnapshot> GetPlayersAround(PlayerSnapshot localPlayer, float maxDistance)
-    {
-        // TODO: вернуть список игроков рядом
-    }
-}
-```
+Если названия отличаются (в вашей версии Peak или при обфускации), откройте `Assembly-CSharp.dll` в dnSpy/ILSpy и поправьте строки в `ReflectionCache` под реальные имена свойств.
 
-Заполните `PlayerSnapshot` реальными данными (HP, stamina, ping, позиция, имя).
+При необходимости можно заменить `ReflectionGameApi` на прямые вызовы игровых классов, чтобы уменьшить накладные расходы и получить больше полей.
 
 ## Сборка
 
