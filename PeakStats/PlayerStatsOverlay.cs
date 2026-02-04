@@ -28,7 +28,7 @@ public sealed class PlayerStatsOverlay : MonoBehaviour
             return;
         }
 
-        if (Input.GetKeyDown(PeakStatsPlugin.Instance.ToggleKey.Value))
+        if (InputShim.GetKeyDown(PeakStatsPlugin.Instance.ToggleKey.Value))
         {
             _visible = !_visible;
         }
@@ -193,6 +193,34 @@ public sealed class PlayerSnapshot
     public float Stamina { get; set; }
     public int Ping { get; set; }
     public Vector3 WorldPosition { get; set; }
+}
+
+internal static class InputShim
+{
+    private static readonly Lazy<MethodInfo?> GetKeyDownMethod = new(() =>
+    {
+        var inputType = Type.GetType("UnityEngine.Input, UnityEngine.InputLegacyModule")
+            ?? Type.GetType("UnityEngine.Input, UnityEngine");
+        return inputType?.GetMethod("GetKeyDown", new[] { typeof(KeyCode) });
+    });
+
+    public static bool GetKeyDown(KeyCode key)
+    {
+        var method = GetKeyDownMethod.Value;
+        if (method == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return method.Invoke(null, new object[] { key }) is bool pressed && pressed;
+        }
+        catch (TargetInvocationException)
+        {
+            return false;
+        }
+    }
 }
 
 internal static class ReflectionGameApi
